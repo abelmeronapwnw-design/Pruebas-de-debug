@@ -1,10 +1,3 @@
---[[
-    🔬 Escáner Universal Definitivo v3 (Compacto)
-    - Tamaño reducido (450x450)
-    - Botón Copiar todo (copia el contenido de la pestaña actual)
-    - Memoria por pestaña, botón Detener, scroll real
-]]
-
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local CoreGui = game:GetService("CoreGui")
