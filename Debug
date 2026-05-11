@@ -1,0 +1,524 @@
+--[[
+    🔬 Escáner Universal Definitivo v3 (Compacto)
+    - Tamaño reducido (450x450)
+    - Botón Copiar todo (copia el contenido de la pestaña actual)
+    - Memoria por pestaña, botón Detener, scroll real
+]]
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
+local RS = game:GetService("ReplicatedStorage")
+
+local MAX_RESULTS = 400
+local SCAN_PAUSE = 0.02
+
+local IGNORE_NAMES = {
+    Terrain = true, Camera = true, [""] = true,
+    ["LocalScript"] = true, ["Script"] = true, ["ModuleScript"] = true,
+    ["RunService"] = true, ["TweenService"] = true,
+    ["Effects"] = true, ["Particles"] = true, ["Lighting"] = true,
+}
+local IGNORE_CLASSES = {
+    Terrain = true, Camera = true, Script = true,
+    LocalScript = true, ModuleScript = true, ParticleEmitter = true,
+    Decal = true, Texture = true, SelectionBox = true, Highlight = true,
+    Sound = true, Sky = true, Atmosphere = true,
+}
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "ScannerCompact"
+gui.Parent = CoreGui
+gui.ResetOnSpawn = false
+
+local main = Instance.new("Frame")
+main.Size = UDim2.new(0, 450, 0, 450)
+main.Position = UDim2.new(0.5, -225, 0.5, -225)
+main.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+main.BackgroundTransparency = 0.05
+main.BorderSizePixel = 0
+main.Parent = gui
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0, 10)
+mainCorner.Parent = main
+
+local topBar = Instance.new("Frame")
+topBar.Size = UDim2.new(1, 0, 0, 30)
+topBar.BackgroundColor3 = Color3.fromRGB(28, 28, 34)
+topBar.BorderSizePixel = 0
+topBar.Parent = main
+local topCorner = Instance.new("UICorner")
+topCorner.CornerRadius = UDim.new(0, 10)
+topCorner.Parent = topBar
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -70, 1, 0)
+title.Position = UDim2.new(0, 10, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "🔍 Escáner Universal"
+title.Font = Enum.Font.GothamBold
+title.TextSize = 13
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.TextColor3 = Color3.new(1,1,1)
+title.Parent = topBar
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 28, 0, 28)
+closeBtn.Position = UDim2.new(1, -34, 0, 1)
+closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+closeBtn.Text = "X"
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextSize = 14
+closeBtn.TextColor3 = Color3.new(1,1,1)
+closeBtn.Parent = topBar
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(1,0)
+closeCorner.Parent = closeBtn
+closeBtn.MouseButton1Click:Connect(function() gui:Destroy() end)
+
+local btnPanel = Instance.new("Frame")
+btnPanel.Size = UDim2.new(1, -12, 0, 40)
+btnPanel.Position = UDim2.new(0, 6, 0, 36)
+btnPanel.BackgroundTransparency = 1
+btnPanel.Parent = main
+
+local function makeButton(text, color, posX, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 80, 0, 32)
+    btn.Position = UDim2.new(0, posX, 0, 4)
+    btn.BackgroundColor3 = color
+    btn.Text = text
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 11
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Parent = btnPanel
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 6)
+    btnCorner.Parent = btn
+    btn.MouseButton1Click:Connect(callback)
+    return btn
+end
+
+local resultFrame = Instance.new("ScrollingFrame")
+resultFrame.Size = UDim2.new(1, -12, 1, -125)
+resultFrame.Position = UDim2.new(0, 6, 0, 82)
+resultFrame.BackgroundColor3 = Color3.fromRGB(8, 8, 14)
+resultFrame.BackgroundTransparency = 0.15
+resultFrame.BorderSizePixel = 0
+resultFrame.ScrollBarThickness = 6
+resultFrame.Parent = main
+
+local resultList = Instance.new("UIListLayout")
+resultList.Padding = UDim.new(0, 2)
+resultList.Parent = resultFrame
+
+resultList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    resultFrame.CanvasSize = UDim2.new(0, 0, 0, resultList.AbsoluteContentSize.Y + 10)
+end)
+
+local bottomPanel = Instance.new("Frame")
+bottomPanel.Size = UDim2.new(1, -12, 0, 40)
+bottomPanel.Position = UDim2.new(0, 6, 1, -46)
+bottomPanel.BackgroundTransparency = 1
+bottomPanel.Parent = main
+
+local copyAllBtn = Instance.new("TextButton")
+copyAllBtn.Size = UDim2.new(0, 100, 0, 32)
+copyAllBtn.Position = UDim2.new(0, 8, 0, 4)
+copyAllBtn.BackgroundColor3 = Color3.fromRGB(60, 80, 120)
+copyAllBtn.Text = "📋 Copiar todo"
+copyAllBtn.Font = Enum.Font.GothamBold
+copyAllBtn.TextSize = 11
+copyAllBtn.TextColor3 = Color3.new(1,1,1)
+copyAllBtn.Parent = bottomPanel
+local copyCorner = Instance.new("UICorner")
+copyCorner.CornerRadius = UDim.new(0, 6)
+copyCorner.Parent = copyAllBtn
+
+local clearBtn = Instance.new("TextButton")
+clearBtn.Size = UDim2.new(0, 80, 0, 32)
+clearBtn.Position = UDim2.new(0, 115, 0, 4)
+clearBtn.BackgroundColor3 = Color3.fromRGB(100, 70, 70)
+clearBtn.Text = "🧹 Limpiar"
+clearBtn.Font = Enum.Font.GothamBold
+clearBtn.TextSize = 11
+clearBtn.TextColor3 = Color3.new(1,1,1)
+clearBtn.Parent = bottomPanel
+local clearCorner = Instance.new("UICorner")
+clearCorner.CornerRadius = UDim.new(0, 6)
+clearCorner.Parent = clearBtn
+
+local stopBtn = Instance.new("TextButton")
+stopBtn.Size = UDim2.new(0, 80, 0, 32)
+stopBtn.Position = UDim2.new(1, -88, 0, 4)
+stopBtn.BackgroundColor3 = Color3.fromRGB(120, 80, 50)
+stopBtn.Text = "⏹ Detener"
+stopBtn.Font = Enum.Font.GothamBold
+stopBtn.TextSize = 11
+stopBtn.TextColor3 = Color3.new(1,1,1)
+stopBtn.Parent = bottomPanel
+local stopCorner = Instance.new("UICorner")
+stopCorner.CornerRadius = UDim.new(0, 6)
+stopCorner.Parent = stopBtn
+
+local tabsData = {
+    tools = { label = "📦 Tools", results = nil, fullLog = nil, objects = nil },
+    workspace = { label = "🌍 Workspace", results = nil, fullLog = nil, objects = nil },
+    player = { label = "👤 Player", results = nil, fullLog = nil, objects = nil },
+    remotes = { label = "🎮 Remotes", results = nil, fullLog = nil, objects = nil },
+    extra = { label = "🔍 Extra", results = nil, fullLog = nil, objects = nil },
+}
+local activeTab = nil
+local scanning = false
+local stopRequested = false
+
+local currentLabels = {}
+local currentFullLog = {}
+local currentObjectsCount = 0local function clearDisplay()
+    for _, lbl in ipairs(currentLabels) do
+        if lbl and lbl.Parent then lbl:Destroy() end
+    end
+    currentLabels = {}
+    currentFullLog = {}
+    currentObjectsCount = 0
+end
+
+local function addLineToDisplay(text, isSystem, isLimitWarning)
+    if not isSystem and currentObjectsCount >= MAX_RESULTS then
+        if not isLimitWarning then
+            local warnMsg = "⚠️ Límite alcanzado (" .. MAX_RESULTS .. ")"
+            addLineToDisplay(warnMsg, true, true)
+        end
+        return
+    end
+    if not isSystem then
+        currentObjectsCount = currentObjectsCount + 1
+    end
+    table.insert(currentFullLog, text)
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, -10, 0, 18)
+    lbl.BackgroundColor3 = isSystem and Color3.fromRGB(50, 50, 40) or Color3.fromRGB(25, 25, 35)
+    lbl.BackgroundTransparency = 0.2
+    lbl.Text = text
+    lbl.TextColor3 = Color3.new(1, 1, 0.85)
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextSize = 10
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = resultFrame
+    local lblCorner = Instance.new("UICorner")
+    lblCorner.CornerRadius = UDim.new(0, 3)
+    lblCorner.Parent = lbl
+    table.insert(currentLabels, lbl)
+    task.wait()
+    resultFrame.CanvasPosition = Vector2.new(0, resultFrame.CanvasSize.Y.Offset)
+end
+
+local function showTabResults(tabKey)
+    local tab = tabsData[tabKey]
+    if not tab then return end
+    clearDisplay()
+    activeTab = tabKey
+    if tab.results then
+        for _, line in ipairs(tab.fullLog) do
+            local isSystem = (line:sub(1,1) == "✅" or line:sub(1,1) == "🔍" or line:sub(1,1) == "⚠️" or line:sub(1,3) == "📋" or line:sub(1,3) == "🧹")
+            local lbl = Instance.new("TextLabel")
+            lbl.Size = UDim2.new(1, -10, 0, 18)
+            lbl.BackgroundColor3 = isSystem and Color3.fromRGB(50, 50, 40) or Color3.fromRGB(25, 25, 35)
+            lbl.BackgroundTransparency = 0.2
+            lbl.Text = line
+            lbl.TextColor3 = Color3.new(1, 1, 0.85)
+            lbl.Font = Enum.Font.Gotham
+            lbl.TextSize = 10
+            lbl.TextXAlignment = Enum.TextXAlignment.Left
+            lbl.Parent = resultFrame
+            local lblCorner = Instance.new("UICorner")
+            lblCorner.CornerRadius = UDim.new(0, 3)
+            lblCorner.Parent = lbl
+            table.insert(currentLabels, lbl)
+        end
+        currentFullLog = tab.fullLog
+        currentObjectsCount = tab.objects
+        task.wait()
+        resultFrame.CanvasPosition = Vector2.new(0, resultFrame.CanvasSize.Y.Offset)
+    else
+        addLineToDisplay("📭 Sin resultados. Pulsa el botón para escanear.", true)
+    end
+end
+
+local function copyCurrentDisplay()
+    if #currentFullLog == 0 then
+        addLineToDisplay("❌ No hay datos para copiar", true)
+        return
+    end
+    local text = table.concat(currentFullLog, "\n")
+    local success = pcall(function() setclipboard(text) end)
+    if success then
+        addLineToDisplay("📋 Copiado " .. #currentFullLog .. " líneas", true)
+    else
+        addLineToDisplay("❌ Error al copiar", true)
+    end
+end
+
+local function clearActiveTab()
+    if activeTab and tabsData[activeTab] then
+        tabsData[activeTab].results = nil
+        tabsData[activeTab].fullLog = nil
+        tabsData[activeTab].objects = 0
+        clearDisplay()
+        addLineToDisplay("🧹 Resultados de la pestaña actual eliminados.", true)
+    else
+        addLineToDisplay("🧹 No hay pestaña activa o ya está limpia.", true)
+    end
+end
+
+local function scanContainer(container, containerName, filter, tabKey)
+    if scanning then
+        addLineToDisplay("⚠️ Escaneo en curso, espera o usa Detener.", true)
+        return
+    end
+    scanning = true
+    stopRequested = false
+    tabsData[tabKey].results = nil
+    showTabResults(tabKey)
+    addLineToDisplay("🔍 Escaneando " .. containerName .. " ...", true)
+    local found = 0
+    local scanned = 0
+    local visited = {}
+    local limitShown = false
+    local function scan(obj, depth)
+        if stopRequested then return end
+        if depth > 25 then return end
+        scanned = scanned + 1
+        if scanned % 50 == 0 then task.wait(SCAN_PAUSE) end
+        local fullName = obj:GetFullName()
+        if visited[fullName] then return end
+        visited[fullName] = true
+        if IGNORE_NAMES[obj.Name] or IGNORE_CLASSES[obj.ClassName] then return end
+        if filter(obj) then
+            if currentObjectsCount < MAX_RESULTS then
+                local icon = ""
+                if obj:IsA("Tool") then icon = "🛠️ "
+                elseif obj:IsA("RemoteEvent") then icon = "📡 "
+                elseif obj:IsA("RemoteFunction") then icon = "📞 "
+                elseif obj:IsA("ClickDetector") then icon = "🖱️ "
+                elseif obj:IsA("ProximityPrompt") then icon = "📢 "
+                elseif obj:IsA("BasePart") then icon = "🧩 "
+                else icon = "📦 " end
+                addLineToDisplay(icon .. fullName .. " (" .. obj.ClassName .. ")")
+                found = found + 1
+            elseif not limitShown then
+                addLineToDisplay("⚠️ Límite alcanzado", true)
+                limitShown = true
+                return
+            else
+                return
+            end
+        end
+        for _, child in ipairs(obj:GetChildren()) do
+            if stopRequested then break end
+            scan(child, depth + 1)
+        end
+    end
+    pcall(scan, container, 0)
+    if stopRequested then
+        addLineToDisplay("⏹ Escaneo detenido.", true)
+    end
+    addLineToDisplay("✅ Escaneo completado. Encontrados: " .. found, true)
+    tabsData[tabKey].fullLog = {}
+    for _, line in ipairs(currentFullLog) do table.insert(tabsData[tabKey].fullLog, line) end
+    tabsData[tabKey].objects = currentObjectsCount
+    tabsData[tabKey].results = true
+    scanning = false
+end
+
+local function isTool(obj) return obj:IsA("Tool") end
+local function isWorkspaceObj(obj)
+    return obj:IsA("BasePart") or obj:IsA("Model") or obj:IsA("ClickDetector") or obj:IsA("ProximityPrompt")
+end
+local function isRemote(obj) return obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") endlocal function scanPlayer(tabKey)
+    if scanning then
+        addLineToDisplay("⚠️ Escaneo en curso.", true)
+        return
+    end
+    scanning = true
+    stopRequested = false
+    tabsData[tabKey].results = nil
+    showTabResults(tabKey)
+    addLineToDisplay("🔍 Escaneando Player...", true)
+    local found = 0
+    local visited = {}
+    local limitShown = false
+    local function scanObj(obj)
+        if stopRequested then return end
+        if visited[obj] then return end
+        visited[obj] = true
+        if IGNORE_NAMES[obj.Name] or IGNORE_CLASSES[obj.ClassName] then return end
+        local relevant = (obj:IsA("Tool") or obj.Name == "leaderstats" or (obj:IsA("NumberValue") and obj.Parent == LocalPlayer))
+        if relevant then
+            if currentObjectsCount < MAX_RESULTS then
+                local icon = obj:IsA("Tool") and "🛠️ " or "💰 "
+                addLineToDisplay(icon .. obj:GetFullName() .. " (" .. obj.ClassName .. ")")
+                found = found + 1
+            elseif not limitShown then
+                addLineToDisplay("⚠️ Límite alcanzado", true)
+                limitShown = true
+                return
+            end
+        end
+        for _, child in ipairs(obj:GetChildren()) do
+            if stopRequested then break end
+            scanObj(child)
+        end
+    end
+    pcall(scanObj, LocalPlayer.Backpack)
+    if LocalPlayer.Character then pcall(scanObj, LocalPlayer.Character) end
+    pcall(scanObj, LocalPlayer)
+    if stopRequested then addLineToDisplay("⏹ Detenido.", true) end
+    addLineToDisplay("✅ Player finalizado. Encontrados: " .. found, true)
+    tabsData[tabKey].fullLog = {}
+    for _, line in ipairs(currentFullLog) do table.insert(tabsData[tabKey].fullLog, line) end
+    tabsData[tabKey].objects = currentObjectsCount
+    tabsData[tabKey].results = true
+    scanning = false
+end
+
+local function scanExtra(tabKey)
+    if scanning then
+        addLineToDisplay("⚠️ Escaneo en curso.", true)
+        return
+    end
+    scanning = true
+    stopRequested = false
+    tabsData[tabKey].results = nil
+    showTabResults(tabKey)
+    addLineToDisplay("🔍 Escaneando Extra (StarterGui, etc)...", true)
+    local containers = {
+        game:GetService("StarterGui"),
+        game:GetService("StarterPack"),
+        game:GetService("Lighting"),
+        LocalPlayer.PlayerGui
+    }
+    local total = 0
+    local limitShown = false
+    for _, cont in ipairs(containers) do
+        if stopRequested then break end
+        if cont then
+            addLineToDisplay("--- " .. cont.Name .. " ---", true)
+            local function scanAll(obj, depth)
+                if stopRequested then return end
+                if depth > 20 then return end
+                task.wait()
+                local full = obj:GetFullName()
+                if IGNORE_NAMES[obj.Name] or IGNORE_CLASSES[obj.ClassName] then return end
+                if currentObjectsCount < MAX_RESULTS then
+                    addLineToDisplay("📦 " .. full .. " (" .. obj.ClassName .. ")")
+                    total = total + 1
+                elseif not limitShown then
+                    addLineToDisplay("⚠️ Límite alcanzado", true)
+                    limitShown = true
+                    return
+                end
+                for _, child in ipairs(obj:GetChildren()) do
+                    if stopRequested then break end
+                    scanAll(child, depth + 1)
+                end
+            end
+            scanAll(cont, 0)
+        end
+    end
+    if stopRequested then addLineToDisplay("⏹ Detenido.", true) end
+    addLineToDisplay("✅ Extra completado. Mostrados: " .. total, true)
+    tabsData[tabKey].fullLog = {}
+    for _, line in ipairs(currentFullLog) do table.insert(tabsData[tabKey].fullLog, line) end
+    tabsData[tabKey].objects = currentObjectsCount
+    tabsData[tabKey].results = true
+    scanning = false
+end
+
+makeButton("📦 Tools", Color3.fromRGB(70,100,70), 5, function()
+    if scanning then addLineToDisplay("⚠️ Escaneando...", true) return end
+    local tab = "tools"
+    if tabsData[tab].results then
+        showTabResults(tab)
+        addLineToDisplay("📂 Resultados previos. Vuelve a pulsar para reescanear.", true)
+    else
+        local folder = RS:FindFirstChild("Tools")
+        if folder then scanContainer(folder, "ReplicatedStorage/Tools", isTool, tab)
+        else addLineToDisplay("❌ Tools no encontrada", true) end
+    end
+end)
+
+makeButton("🌍 Workspace", Color3.fromRGB(80,80,110), 90, function()
+    if scanning then addLineToDisplay("⚠️ Escaneando...", true) return end
+    local tab = "workspace"
+    if tabsData[tab].results then
+        showTabResults(tab)
+        addLineToDisplay("📂 Resultados previos.", true)
+    else
+        scanContainer(workspace, "Workspace", isWorkspaceObj, tab)
+    end
+end)
+
+makeButton("👤 Player", Color3.fromRGB(110,80,80), 175, function()
+    if scanning then addLineToDisplay("⚠️ Escaneando...", true) return end
+    local tab = "player"
+    if tabsData[tab].results then
+        showTabResults(tab)
+        addLineToDisplay("📂 Resultados previos.", true)
+    else
+        scanPlayer(tab)
+    end
+end)
+
+makeButton("🎮 Remotes", Color3.fromRGB(90,70,130), 260, function()
+    if scanning then addLineToDisplay("⚠️ Escaneando...", true) return end
+    local tab = "remotes"
+    if tabsData[tab].results then
+        showTabResults(tab)
+        addLineToDisplay("📂 Resultados previos.", true)
+    else
+        scanContainer(RS, "ReplicatedStorage", isRemote, tab)
+    end
+end)
+
+makeButton("🔍 Extra", Color3.fromRGB(100,100,70), 345, function()
+    if scanning then addLineToDisplay("⚠️ Escaneando...", true) return end
+    local tab = "extra"
+    if tabsData[tab].results then
+        showTabResults(tab)
+        addLineToDisplay("📂 Resultados previos.", true)
+    else
+        scanExtra(tab)
+    end
+end)
+
+copyAllBtn.MouseButton1Click:Connect(copyCurrentDisplay)
+clearBtn.MouseButton1Click:Connect(clearActiveTab)
+stopBtn.MouseButton1Click:Connect(function()
+    if scanning then stopRequested = true; addLineToDisplay("⏹ Deteniendo...", true)
+    else addLineToDisplay("ℹ️ No hay escaneo activo", true) end
+end)
+
+local dragging = false
+local dragStart, startPos
+topBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = main.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X,
+                                  startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+addLineToDisplay("✅ Escáner Universal v3 (compacto) cargado.", true)
+addLineToDisplay("📌 Cada pestaña guarda resultados. Copia con 'Copiar todo'.", true)
